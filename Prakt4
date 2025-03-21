@@ -1,0 +1,224 @@
+from threading import Thread, Lock
+from datetime import datetime
+import threading
+
+class Logger:
+    def __init__(self, log_file="app.log"):
+        self.log_file = log_file 
+        self.lock = Lock()  
+        self.queue = []  
+        self.running = True  
+        self.thread = Thread(target=self._write_logs)  
+        self.thread.start()  
+
+    def log(self, level, username, message):
+        """
+        Добавляет запись в очередь логов.
+        :param level: Уровень логирования (INFO, ERROR)
+        :param username: Имя пользователя
+        :param message: Сообщение для записи в лог
+        """
+        timestamp = datetime.now().strftime("%d.%m.%Y %H:%M:%S")  
+        log_entry = f"[{level}] [{timestamp}] [{username}] – {message}\n"  
+        with self.lock:
+            self.queue.append(log_entry)  
+
+    def _write_logs(self):
+        """
+        Метод, который выполняется в отдельном потоке.
+        Записывает логи из очереди в файл.
+        """
+        while self.running:
+            with self.lock:
+                if self.queue:
+                    with open(self.log_file, "a", encoding="utf-8") as file:
+                        for log_entry in self.queue:
+                            file.write(log_entry) 
+                        self.queue.clear()  
+
+    def stop(self):
+        """
+        Останавливает поток записи логов.
+        """
+        self.running = False  
+        self.thread.join()  
+
+
+class WorkUser:
+    def __init__(self, logger):
+        self.lock = threading.Lock()
+        self.loginRegistaration = None
+        self.passwordRegistration = None
+        self.loginAutorization = None
+        self.passwordAutorization = None
+        self.logger = logger  
+
+    def saveUser(self):
+        if self.loginRegistaration is None or self.passwordRegistration is None:
+            self.logger.log("ERROR", "SYSTEM", "Логин или пароль не введены")
+            print("Ошибка: логин или пароль не введены.")
+            return
+        
+        with self.lock:
+            with open("users.txt", "a") as file:
+                file.write(f"{self.loginRegistaration}:{self.passwordRegistration}\n") 
+        self.logger.log("INFO", self.loginRegistaration, "Регистрация прошла успешно")
+        print("\nРегистрация прошла успешно")              
+
+    def read(self):
+        with self.lock:
+            try:
+                with open("users.txt", "r") as file:
+                    return file.readlines()
+            except Exception as e:
+                self.logger.log("ERROR", "SYSTEM", f"Ошибка при чтении файла: {e}")
+                return []
+                
+    def workUsers(self):
+        while True:
+            actionUser = input("Выберете действие (1. Регистрация, 2. Авторизация):")
+            if actionUser != "1" and actionUser != "2":
+                self.logger.log("ERROR", "SYSTEM", "Некорректное значение (1 или 2)")
+                print("Введите корректное значение (1 или 2)!")
+                continue
+            
+            if actionUser == "1":
+                self.loginRegistaration = input("Введите логин: ")
+                self.passwordRegistration = input("Введите пароль: ")
+                self.logger.log("INFO", self.loginRegistaration, "Попытка регистрации")
+                threading.Thread(target=self.saveUser).start() 
+                return
+            elif actionUser == "2":
+                self.loginAutorization = input("Введите логин: ")
+                self.passwordAutorization = input("Введите пароль: ")
+                self.logger.log("INFO", self.loginAutorization, "Попытка авторизации")
+                
+                users = self.read()  
+                found = False
+                for user in users:
+                    user = user.strip()
+                    if user == f"{self.loginAutorization}:{self.passwordAutorization}":
+                        self.logger.log("INFO", self.loginAutorization, "Вход выполнен успешно")
+                        print("Вход успешно выполнен")
+                        found = True
+                        return
+                            
+                if not found:
+                    self.logger.log("ERROR", self.loginAutorization, "Неудачная попытка входа")
+                    print("Данные не найдены")
+
+
+class Calculator:
+    def __init__(self, logger):
+        self.firstNumber = None
+        self.secondNumber = None
+        self.resultAddition = None
+        self.resultSubtraction = None
+        self.resultMultiplication = None
+        self.resultDivision = None
+        self.resultExponentiation = None
+        self.resultRoot = None
+        self.lock = threading.Lock()
+        self.logger = logger 
+
+    def calculator(self):
+        launch = True
+        while launch:
+            try:
+                with self.lock:
+                    self.firstNumber = float(input("Введите (первое) число: "))
+                    self.secondNumber = float(input("Введите второе число (степень; при нахождении корня это поле не будет учитываться): "))
+                    self.logger.log("INFO", "SYSTEM", f"Введены числа: {self.firstNumber}, {self.secondNumber}")
+                    return
+            except Exception as e:
+                self.logger.log("ERROR", "SYSTEM", f"Ошибка ввода: {e}")
+                print("Неправильно введенное значение")
+            
+    def addition(self):
+        with self.lock:
+            self.resultAddition = self.firstNumber + self.secondNumber
+            self.logger.log("INFO", "SYSTEM", f"Сложение: {self.firstNumber} + {self.secondNumber} = {self.resultAddition}")
+        
+    def subtraction(self):
+        with self.lock:
+            self.resultSubtraction = self.firstNumber - self.secondNumber
+            self.logger.log("INFO", "SYSTEM", f"Вычитание: {self.firstNumber} - {self.secondNumber} = {self.resultSubtraction}")
+        
+    def multiplication(self):
+        with self.lock:
+            self.resultMultiplication = self.firstNumber * self.secondNumber
+            self.logger.log("INFO", "SYSTEM", f"Умножение: {self.firstNumber} * {self.secondNumber} = {self.resultMultiplication}")
+        
+    def division(self):
+        with self.lock:
+            if self.secondNumber == 0:
+                self.logger.log("ERROR", "SYSTEM", "Деление на ноль невозможно")
+                print("Ошибка: деление на ноль невозможно")
+                self.resultDivision = None
+            else:
+                self.resultDivision = self.firstNumber / self.secondNumber
+                self.logger.log("INFO", "SYSTEM", f"Деление: {self.firstNumber} / {self.secondNumber} = {self.resultDivision}")
+        
+    def exponentiation(self):
+        with self.lock:
+            self.resultExponentiation = self.firstNumber ** self.secondNumber
+            self.logger.log("INFO", "SYSTEM", f"Возведение в степень: {self.firstNumber} ^ {self.secondNumber} = {self.resultExponentiation}")
+        
+    def root(self):
+        with self.lock:
+            if self.firstNumber < 0:
+                self.logger.log("ERROR", "SYSTEM", "Извлечение корня из отрицательного числа невозможно")
+                print("Ошибка: извлечение корня из отрицательного числа невозможно")
+                self.resultRoot = None
+            else:
+                self.resultRoot = self.firstNumber ** 0.5
+                self.logger.log("INFO", "SYSTEM", f"Извлечение корня: √{self.firstNumber} = {self.resultRoot}")
+            
+    def saveRes(self):
+        with self.lock:
+            res = f"Результат сложения: {self.resultAddition}\nРезультат вычитания: {self.resultSubtraction}\nРезультат умножения: {self.resultMultiplication}\nРезультат деления: {self.resultDivision}\nРезультат возведения в степень: {self.resultExponentiation}\nРезультат вычисления корня: {self.resultRoot}\n"
+            with open("res.txt", "a", encoding="utf-8") as file:
+                file.write(res) 
+            self.logger.log("INFO", "SYSTEM", "Результаты записаны в файл res.txt")
+        print("\nЗапись результатов прошла успешно")   
+            
+    def conclusion(self):
+        res = f"Результат сложения: {self.resultAddition}\nРезультат вычитания: {self.resultSubtraction}\nРезультат умножения: {self.resultMultiplication}\nРезультат деления: {self.resultDivision}\nРезультат возведения в степень: {self.resultExponentiation}\nРезультат вычисления корня: {self.resultRoot}\n"
+        threading.Thread(target=self.saveRes).start()
+        print(res)  
+
+
+if __name__ == "__main__":
+    logger = Logger()
+    
+    beggining = WorkUser(logger)
+    calc = Calculator(logger)
+
+    beggining.workUsers()
+
+    calc.calculator()
+
+    new_thr1 = threading.Thread(target=calc.addition)
+    new_thr2 = threading.Thread(target=calc.subtraction)
+    new_thr3 = threading.Thread(target=calc.multiplication)
+    new_thr4 = threading.Thread(target=calc.division)
+    new_thr5 = threading.Thread(target=calc.exponentiation)
+    new_thr6 = threading.Thread(target=calc.root)
+
+    new_thr1.start()
+    new_thr2.start()
+    new_thr3.start()
+    new_thr4.start()
+    new_thr5.start()
+    new_thr6.start()
+
+    new_thr1.join()
+    new_thr2.join()
+    new_thr3.join()
+    new_thr4.join()
+    new_thr5.join()
+    new_thr6.join()
+
+    calc.conclusion()
+
+    logger.stop()
